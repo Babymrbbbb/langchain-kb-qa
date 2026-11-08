@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TeamFlow 知识库问答 · KB-QA Demo</title>
+<style>
+  :root { --bg:#0f1420; --panel:#171e2e; --accent:#3b82f6; --text:#e6edf6; --muted:#9aa7bd; --line:#26304a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--text); height:100vh; display:flex; flex-direction:column; }
+  header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; }
+  header h1 { font-size:16px; margin:0; }
+  header .tag { font-size:12px; color:var(--muted); border:1px solid var(--line); padding:2px 8px; border-radius:999px; }
+  #log { flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:14px; }
+  .msg { max-width:80%; padding:12px 14px; border-radius:12px; line-height:1.6; white-space:pre-wrap; font-size:14px; }
+  .user { align-self:flex-end; background:var(--accent); color:#fff; }
+  .bot { align-self:flex-start; background:var(--panel); border:1px solid var(--line); }
+  .src { margin-top:10px; font-size:12px; color:var(--muted); }
+  .src span { display:inline-block; background:#0c1220; border:1px solid var(--line); padding:2px 8px; border-radius:6px; margin:2px 4px 0 0; }
+  .mode { font-size:11px; color:var(--muted); margin-bottom:4px; }
+  #bar { border-top:1px solid var(--line); padding:14px 20px; display:flex; gap:10px; }
+  #q { flex:1; background:var(--panel); border:1px solid var(--line); color:var(--text); border-radius:10px; padding:10px 14px; font-size:14px; outline:none; }
+  #send { background:var(--accent); color:#fff; border:none; padding:0 20px; border-radius:10px; font-size:14px; cursor:pointer; }
+  #send:disabled { opacity:.5; cursor:default; }
+  .examples { display:flex; flex-wrap:wrap; gap:8px; padding:0 20px 12px; }
+  .examples button { background:var(--panel); border:1px solid var(--line); color:var(--muted); border-radius:999px; padding:6px 12px; font-size:12px; cursor:pointer; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>TeamFlow 知识库问答</h1>
+    <span class="tag" id="modeTag">加载中…</span>
+  </header>
+  <div class="examples">
+    <button>TeamFlow 支持哪些第三方集成？</button>
+    <button>忘记密码怎么重置？</button>
+    <button>企业版的计费与数据安全？</button>
+    <button>如何导出我的工作区数据？</button>
+  </div>
+  <div id="log"></div>
+  <div id="bar">
+    <input id="q" placeholder="输入问题，回车发送…" autocomplete="off" />
+    <button id="send">发送</button>
+  </div>
+
+<script>
+const log = document.getElementById('log');
+const q = document.getElementById('q');
+const send = document.getElementById('send');
+const modeTag = document.getElementById('modeTag');
+
+function addMsg(role, text, sources, mode) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  if (role === 'bot' && mode) {
+    const m = document.createElement('div');
+    m.className = 'mode';
+    m.textContent = mode === 'llm' ? '模式：真实大模型生成' : '模式：离线演示（检索增强摘要）';
+    div.appendChild(m);
+  }
+  const body = document.createElement('div');
+  body.textContent = text;
+  div.appendChild(body);
+  if (sources && sources.length) {
+    const s = document.createElement('div');
+    s.className = 'src';
+    s.innerHTML = '来源：' + sources.map(x => `<span>${x.id} · ${x.title}</span>`).join('');
+    div.appendChild(s);
+  }
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function ask(question) {
+  if (!question.trim()) return;
+  addMsg('user', question);
+  q.value = ''; send.disabled = true;
+  try {
+    const r = await fetch('/api/ask', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ question, k: 5 })
+    });
+    const data = await r.json();
+    addMsg('bot', data.answer || '(无回答)', data.sources, data.mode);
+  } catch (e) {
+    addMsg('bot', '请求失败：' + e.message);
+  } finally {
+    send.disabled = false; q.focus();
+  }
+}
+
+send.onclick = () => ask(q.value);
+q.onkeydown = (e) => { if (e.key === 'Enter') ask(q.value); };
+document.querySelectorAll('.examples button').forEach(b => b.onclick = () => ask(b.textContent));
+
+// 探测模式
+fetch('/api/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question:'__probe__', k:1})})
+  .then(r => r.json()).then(d => { modeTag.textContent = (d.mode === 'llm' ? '真实大模型' : '离线演示'); addMsg('bot', '已就绪。试试上面的示例问题，或自己输入。', null, d.mode); })
+  .catch(() => modeTag.textContent = '离线演示');
+</script>
+</body>
+</html>
